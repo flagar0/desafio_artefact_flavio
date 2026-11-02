@@ -11,3 +11,8 @@ __pycache__/
 
 # bancos gerados em runtime (recriados por scripts/ingest.py)
 storage_data/
+
+# artefatos auxiliares do LaTeX
+*.aux
+*.log
+*.out
