@@ -1,33 +1,42 @@
 # Exemplo 05 fora_escopo: Fora de escopo e acessórios
 
-- **Cliente (simulado):** Mariana Costa Santos (id 4)
-- **Modelo:** `qwen3.5:4b` via Ollama · **Gerado em:** 01/11/2026 22:44 (execução real do agente)
-- As linhas `🔧` mostram as ferramentas (MCP) que o agente chamou antes de responder.
+- **Cliente (simulado):** Mariana Costa Santos (`customer_id=4`, Campo Grande, `(67) 99123-4567`)
+- **Modelo:** `qwen3.5:4b` via Ollama · **Gerado em:** 02/11/2026 11:03 (execução real do agente)
+- **Tempo total da conversa:** `58.32s` (2 turno(s))
+- As seções `🔧 Rastreamento de Ferramentas (MCP / Tool Calls)` mostram **exatamente como o agente invocou cada função** (argumentos enviados) e **o payload JSON retornado pelo servidor MCP**, servindo como evidência tanto do roteamento do LLM quanto da resposta determinística das ferramentas.
 
 ---
+
+### Turno 1
 
 **🧑 Mariana:** Me passa uma receita de bolo de cenoura?
 
-**🎸 Léo:**
+**🎸 Léo** _(⏱️ `28.51s`)_:
 
-> Oi Mariana! Eu sou o Léo, aqui da Empório da Música. Mas preciso te avisar que eu não faço receitas de bolo — meu foco é instrumentos musicais como violões, guitarras e ukuleles. 
+> Oi Mariana! Eu sou o Léo, aqui da Empório da Música. 😊
 >
-> Se você estiver procurando algo relacionado a música, posso ajudar com preços, estoque ou promoções! 😊
+> Infelizmente eu não posso te passar receitas de bolo, pois a nossa loja vende apenas instrumentos musicais. Se você tiver interesse em algum violão, guitarra ou outro instrumento, é só me chamar que eu te ajudo a encontrar o ideal! 🎸🎶
 
-🔧 nenhuma (resposta direta)
+**⏱️ Tempo de processamento:** `28.51s` · **Validação do teste:** ✅ PASS (esperado: `nenhuma ferramenta (resposta direta)`)
+
+🔧 **Ferramentas chamadas:** `nenhuma (resposta direta sem tool call)`
 
 ---
 
+### Turno 2
+
 **🧑 Mariana:** Vocês vendem corda de violão?
 
-**🎸 Léo:**
+**🎸 Léo** _(⏱️ `29.81s`)_:
 
-> Oi Mariana! Aqui é o Léo.
+> Oi Mariana! Eu sou o Léo, aqui da Empório da Música. 🎸
 >
-> Infelizmente, a Empório da Música vende apenas instrumentos musicais (violões, guitarras, etc.). Nós não temos cordas, palhetas ou outros acessórios.
+> Infelizmente nós não vendemos cordas de violão, pois nossa loja foca apenas em instrumentos musicais como violões e guitarras.
 >
-> Se você estiver procurando cordas, sugiro procurar uma loja especializada em acessórios de violão na sua região. Posso ajudar com alguma coisa relacionada a instrumentos?
+> Se você estiver procurando acessórios, talvez seja melhor procurar uma loja especializada nesse tipo de item. Posso te ajudar a encontrar um bom violão ou guitarra para você?
 
-🔧 nenhuma (resposta direta)
+**⏱️ Tempo de processamento:** `29.81s` · **Validação do teste:** ✅ PASS (esperado: `nenhuma ferramenta (resposta direta)`)
+
+🔧 **Ferramentas chamadas:** `nenhuma (resposta direta sem tool call)`
 
 ---

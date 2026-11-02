@@ -75,8 +75,8 @@ O banco `storage_data/store.db` é criado automaticamente a partir dos CSVs em `
 |---|---|
 | `python -m app.cli --customer 1 --fresh` | Conversa pelo terminal como o cliente 1 |
 | `python -m pytest` | 16 testes determinísticos da camada de dados e regras de negócio (sem LLM) |
-| `python -m evals.run_scenarios` | Avalia 15 cenários contra o Ollama, verificando se a ferramenta esperada foi chamada |
-| `python -m evals.run_scenarios --export` | Idem e regrava `examples/*.md` |
+| `python -m evals.run_scenarios` | Avalia 16 cenários contra o Ollama, verificando se a ferramenta esperada foi chamada e medindo o tempo de processamento |
+| `python -m evals.run_scenarios --export` | Idem e regrava `examples/*.md` com assinatura exata das chamadas MCP, argumentos JSON, retorno completo das funções e tempo de resposta |
 
 ### Configuração (`.env`)
 | Variável | Padrão | Descrição |
@@ -88,7 +88,7 @@ O banco `storage_data/store.db` é criado automaticamente a partir dos CSVs em `
 ### Como usar a demo
 1. Na barra lateral, escolha **📱 Cliente** e um contato; converse como se fosse o cliente.
 2. Peça algo que exija a equipe (ex.: *"Quero devolver meu pedido"* → *"Sim, quero devolver"*).
-3. Troque para **🏪 Lojista**: o alerta vermelho aparece no topo e o contato fica com 🔴 na lista. Clique em **Assumir conversa**, responda como atendente e depois **Devolver ao agente**.
+3. Troque para **🏪 Lojista**: o alerta vermelho aparece no topo e o contato fica com 🔴 na lista. Além disso, o lojista pode expandir cada chamada `🔎` para inspecionar os argumentos e o JSON retornado pelo MCP, junto ao tempo de processamento `⏱️`. Clique em **Assumir conversa**, responda como atendente e depois **Devolver ao agente**.
 
 ## Decisões técnicas e justificativas
 
@@ -101,11 +101,11 @@ O banco `storage_data/store.db` é criado automaticamente a partir dos CSVs em `
 | **Retrieval de políticas** | **Sem banco vetorial**: PDF curado em [`politicas.md`](app/knowledge/politicas.md), dividido em 9 tópicos; `get_store_policies(topic)` com `enum` de tópicos | O manual tem ~4 mil tokens e é bem estruturado. Seleção por tópico é exata, determinística e auditável. Embeddings trariam risco de recuperar o trecho errado e mais dependências sem ganho aqui. Escala? Veja limitações. |
 | **Retrieval de dados** | CSV → **SQLite** + consultas parametrizadas | Filtros exatos (preço ≤ X, em estoque, promoção ativa) são SQL/Python, não "adivinhação" do LLM. Busca textual tolera acentos e plural (`violões` = `violao`). |
 | **Regras no código, não no prompt** | Preço final com promoção, PIX (5%, **não cumulativo** com promoção), parcelamento máximo pela política, prazos de arrependimento/defeito/garantia, loja aberta/fechada | Um modelo pequeno **lê** resultados prontos em vez de calcular. Evita erro numérico e "propaganda enganosa" (manual §7.1). As ferramentas devolvem textos já formatados (`R$ 2.199,00`). |
-| **Estratégia de prompt** | [`prompts.py`](app/agent/prompts.py): persona "Léo" (tom do manual: *amigo que entende de música*), **regra nº 1: responder sempre em português**, tabela "pergunta → ferramenta", regras de negócio, escopo, quando chamar humano, poucos exemplos. Contexto dinâmico: nome do cliente e data/hora atuais | Modelos pequenos seguem melhor instruções curtas, imperativas e com mapeamento explícito de ferramentas. Ferramentas ficam com nomes em inglês (o modelo as chama melhor), mas o agente é instruído a responder **apenas em português**. |
+| **Estratégia de prompt** | [`prompts.py`](app/agent/prompts.py): persona "Léo" (tom do manual: *amigo que entende de música*), **regra nº 1: responder sempre em português**, tabela "pergunta → ferramenta", regras de negócio, escopo e entradas incompreensíveis (*gibberish*), quando chamar humano, poucos exemplos. Contexto dinâmico: nome do cliente e data/hora atuais | Modelos pequenos seguem melhor instruções curtas, imperativas e com mapeamento explícito de ferramentas. Ferramentas ficam com nomes em inglês (o modelo as chama melhor), mas o agente é instruído a responder **apenas em português**. |
 | **Segurança/privacidade** | `customer_id` das consultas de pedidos é **sobrescrito pela aplicação** (interceptor MCP), nunca vem do LLM | Mesmo com prompt injection, um cliente só enxerga os próprios pedidos (LGPD). |
 | **Escalonamento humano** | Ferramenta `request_human_handoff` + modo da conversa persistido (`agent` / `waiting_human` / `human`) | Atende ao requisito: agente autônomo por padrão, alerta vermelho para o lojista, agente em silêncio até ser devolvido. |
-| **Guard rails** | (1) Se o texto promete acionar a equipe e a ferramenta não foi chamada, o handoff é registrado automaticamente (`request_human_handoff(auto)`); (2) qualquer exceção/resposta vazia/timeout vira handoff com mensagem padrão ao cliente | Bug real encontrado nos testes: o modelo disse "vou avisar a equipe" sem chamar a ferramenta. O cliente nunca fica sem resposta nem sem dono. |
-| **Persistência** | SQLite (`chat.db`): conversas por cliente, mensagens, ferramentas usadas, modo | Sem servidor, histórico sobrevive a reinícios; o histórico recente (20 msgs) é enviado ao modelo. |
+| **Guard rails** | (1) Se o modelo anuncia "vou verificar" sem chamar ferramenta, recebe um *retry* automático exigindo a chamada; (2) se o texto promete acionar a equipe e a ferramenta não foi chamada, o handoff é registrado automaticamente (`request_human_handoff(auto)`); (3) qualquer exceção/resposta vazia/timeout vira handoff com mensagem padrão ao cliente | Problemas reais encontrados nos testes com modelo local pequeno. O cliente nunca fica sem resposta nem sem dono. |
+| **Persistência e rastreabilidade** | SQLite (`chat.db`): conversas por cliente, mensagens, ferramentas usadas, *tool traces* completos (argumentos + JSON de saída) e tempo de processamento (`elapsed_seconds`) | Sem servidor, histórico sobrevive a reinícios; permite auditar tanto no painel do lojista quanto nos relatórios exportados (`examples/*.md`) exatamente como o agente chamou cada função MCP e o que ela retornou. |
 | **Interface** | **Streamlit**, uma tela com duas visões (Cliente / Lojista); contatos vêm de `customers.csv` | Foco do desafio é o agente, não o front. É deliberadamente um **protótipo** (veja evoluções com FastAPI). Negrito em formato WhatsApp (`*texto*`) é normalizado e exibido corretamente. |
 
 ### Nota de desempenho (decisão baseada em medição)
@@ -114,7 +114,7 @@ Medido na máquina de desenvolvimento (GTX 1650 4 GB, i7-4790, 16 GB RAM):
 | Modelo | Geração | Resposta típica de ponta a ponta |
 |---|---|---|
 | `qwen3.5:9b` | ~4 tokens/s (boa parte na CPU) | **~3,5 min** (inviável para atendimento) |
-| `qwen3.5:4b` | ~8 tokens/s | **~30-55 s** (a 1ª mensagem inclui o carregamento do modelo) |
+| `qwen3.5:4b` | ~8 tokens/s | **~25-60 s** (a 1ª mensagem inclui o carregamento do modelo) |
 
 Por isso o padrão é o 4b. Em hardware melhor basta `OLLAMA_MODEL=qwen3.5:9b` (ou maior) no `.env`. Ainda assim, ~30 s é lento para WhatsApp real; em produção usaria GPU dedicada ou um modelo hospedado (veja próximos passos).
 
@@ -126,34 +126,38 @@ Por isso o padrão é o 4b. Em hardware melhor basta `OLLAMA_MODEL=qwen3.5:9b` (
 |---|---|
 | ![Alerta vermelho no painel do lojista](imgs/print_lucas.png) | ![Conversa com a cliente Mariana](imgs/print_mariana.png) |
 
-### Conversas exportadas (15 cenários reais)
+### Conversas exportadas (16 cenários reais com rastreamento MCP e tempo)
 
-Execuções reais do agente, geradas por `python -m evals.run_scenarios --export` (incluem as ferramentas chamadas):
+Execuções reais do agente, geradas por `python -m evals.run_scenarios --export`. Cada arquivo `.md` inclui:
+- **⏱️ Tempo de processamento** por turno e tempo total da conversa;
+- **🔧 Assinatura exata da chamada** realizada pelo agente (ex.: `get_customer_orders(customer_id=1)`) e argumentos em JSON;
+- **📦 Resposta completa (JSON)** devolvida pela função do servidor MCP (validando tanto o roteamento do agente quanto a execução determinística da ferramenta).
 
 | # | Cenário | Destaque |
 |---|---|---|
-| [01](examples/01_catalogo.md) | Violões até R$ 1000 + detalhes de um modelo | Consulta de catálogo com filtro de preço |
-| [02](examples/02_loja.md) | Endereço e "estão abertos agora?" | Política vs. status em tempo real |
-| [03](examples/03_preco_promocao.md) | Preço do Takamine GD20 e promoções ativas | Preço de tabela, PIX, parcelamento, promoção ativa |
-| [04](examples/04_devolucao.md) | "Me arrependi da compra" | **Não trivial:** pedido do cliente + prazo de 7 dias + handoff humano com alerta |
-| [05](examples/05_fora_escopo.md) | Receita de bolo e corda de violão | Fora de escopo e produto que a loja não vende |
-| [06](examples/06_produto_esgotado.md) | Violão Giannini GF-3D sem estoque | Informa indisponibilidade e sugere alternativas disponíveis |
-| [07](examples/07_produto_descontinuado.md) | Violão 7 cordas Shelby SN-7C descontinuado | Informa saída do catálogo e sugere equivalentes |
-| [08](examples/08_pix_nao_cumulativo.md) | Crafter HT-100 em promoção + pergunta sobre PIX | Explica que o desconto de 5% no PIX não acumula com promoção ativa |
-| [09](examples/09_rastreio_pedido.md) | Status e rastreio do pedido #8 | Consulta em tempo real de pedido enviado (`shipped`) e código de rastreio |
-| [10](examples/10_pedido_cancelado.md) | Motivo de pedido cancelado | Consulta `notes` do pedido cancelado do próprio cliente |
-| [11](examples/11_formas_pagamento.md) | Formas de pagamento e regras de parcelamento | PIX (5%), débito, boleto e faixas de parcelamento sem juros no cartão |
+| [01](examples/01_catalogo.md) | Violões até R$ 1000 + detalhes de um modelo | Consulta de catálogo com filtro de preço (`max_price=1000`) + `get_product_details` |
+| [02](examples/02_loja.md) | Endereço e "estão abertos agora?" | Política (`about_and_contact`) vs. status em tempo real (`get_opening_status`) |
+| [03](examples/03_preco_promocao.md) | Preço do Takamine GD20 e promoções ativas | Preço de tabela, PIX, parcelamento e busca de ofertas (`on_promotion=True`) |
+| [04](examples/04_devolucao.md) | "Me arrependi da compra" | **Não trivial:** pedido do cliente + prazo de 7 dias (`policy_check`) + handoff humano com alerta |
+| [05](examples/05_fora_escopo.md) | Receita de bolo e corda de violão | Fora de escopo e produto que a loja não vende (acessório) |
+| [06](examples/06_produto_esgotado.md) | Violão Giannini GF-3D sem estoque | Informa indisponibilidade (`stock_quantity=0`) e sugere alternativas disponíveis |
+| [07](examples/07_produto_descontinuado.md) | Violão 7 cordas Shelby SN-7C descontinuado | Informa saída do catálogo (`status=discontinued`) e sugere equivalentes |
+| [08](examples/08_pix_nao_cumulativo.md) | Crafter HT-100 em promoção + pergunta sobre PIX | Explica que o desconto de 5% no PIX não acumula com promoção ativa (18%) |
+| [09](examples/09_rastreio_pedido.md) | Status e rastreio do pedido #8 | Consulta em tempo real de pedido enviado (`shipped`) e código de rastreio `BRJL5544332BR` |
+| [10](examples/10_pedido_cancelado.md) | Motivo de pedido cancelado | Consulta `notes` do pedido cancelado do próprio cliente (`customer_id=17`) |
+| [11](examples/11_parcelamento_e_entrega_sp.md) | Parcelamento no cartão + entrega para São Paulo | **Multi-turno de políticas:** busca `payment` (faixas sem juros) e em seguida `shipping` (PAC, SEDEX e Jadlog com prazos) |
 | [12](examples/12_frete_entrega.md) | Frete para Campo Grande e outras cidades | Motoboy (grátis > R$ 500) vs. PAC, SEDEX e Jadlog |
-| [13](examples/13_garantia.md) | Garantia legal, do fabricante e exclusões | 90 dias CDC vs. desgaste natural (cordas não cobertas) |
-| [14](examples/14_categorias.md) | Categorias de instrumentos da loja | Lista as 9 categorias ativas do catálogo |
-| [15](examples/15_reclamacao_handoff.md) | Reclamação de instrumento com defeito | Empatia, prazo de 24h úteis e escalonamento imediato (`request_human_handoff`) |
+| [13](examples/13_garantia.md) | Garantia legal, do fabricante e exclusões | 90 dias CDC vs. desgaste natural (cordas arrebentadas não cobertas) |
+| [14](examples/14_categorias.md) | Categorias de instrumentos da loja | Lista as categorias do catálogo (`list_categories`) |
+| [15](examples/15_reclamacao_handoff.md) | Reclamação de instrumento com defeito | Empatia, prazo de retorno e escalonamento imediato (`request_human_handoff`) |
+| [16](examples/16_entrada_aleatoria.md) | Entrada aleatória (`askdjansdkj`) + retomada | Lida com *gibberish* sem chamar ferramentas indevidas e retoma a busca de violões no turno seguinte |
 
 ## Limitações conhecidas e próximos passos
 
 **Limitações**
 - **Sem WhatsApp real**: a UI é uma simulação. Em produção seria um webhook (WhatsApp Business Cloud API) → o mesmo `handle_customer_message`.
 - **Latência alta** (dezenas de segundos) por rodar um LLM em hardware modesto; sem *streaming* de resposta nem indicador de "digitando" real.
-- **Qualidade do modelo pequeno**: pode errar roteamento ou omitir informações (ex.: citar menos produtos do que retornou). Mitigado com regras no código, guard rails e avaliação por cenário, mas não eliminado. Os testes de cenário cobrem 15 fluxos, mas não medem qualidade textual com juiz automático.
+- **Qualidade do modelo pequeno**: pode errar roteamento ou omitir informações (ex.: citar menos produtos do que retornou). Mitigado com regras no código, guard rails e avaliação por cenário, mas não eliminado. Os testes de cenário cobrem 16 fluxos, mas não medem qualidade textual com juiz automático.
 - **Data de recebimento aproximada**: os dados só trazem a *previsão* de entrega; ela é usada como proxy dos prazos de devolução/garantia (o agente é instruído a não prometer sem confirmar com a equipe). Feriados não são considerados no horário de funcionamento.
 - **Recuperação de políticas por tópico**: ótimo para um manual curto, mas não escala para centenas de páginas (aí valeria busca híbrida/embeddings).
 - **Painel do lojista com atualização manual** (botão 🔄) e sem autenticação; um único processo.
@@ -195,7 +199,7 @@ app/
   config.py, cli.py
 data/               CSVs e PDF do desafio
 tests/              testes das regras de negócio (sem LLM)
-evals/              cenários + exportação dos exemplos
-examples/           15 conversas reais exportadas do agente (.md)
+evals/              cenários + exportação dos exemplos (com traces MCP e tempo)
+examples/           16 conversas reais exportadas do agente (.md)
 imgs/               prints da interface Streamlit (visão lojista e cliente)
 ```

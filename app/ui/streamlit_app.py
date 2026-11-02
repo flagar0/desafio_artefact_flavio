@@ -4,6 +4,7 @@ Run:  streamlit run app/ui/streamlit_app.py
 
 PROTOTYPE: one Streamlit process, SQLite persistence, manual refresh for the shopkeeper view.
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -131,8 +132,14 @@ def render(msg: dict) -> None:
         if msg["sender"] == "human":
             st.caption("Atendente (loja)")
         st.markdown(whatsapp_to_markdown(msg["content"]))
-        if is_shop and msg["tools_used"]:
-            st.caption(f"🔧 ferramentas: {msg['tools_used'].strip('[]').replace(chr(34), '')}")
+        if is_shop and msg["sender"] == "agent":
+            elapsed = f" · ⏱️ {msg['elapsed_seconds']:.2f}s" if msg.get("elapsed_seconds") else ""
+            tools = msg["tools_used"].strip("[]").replace(chr(34), "") if msg.get("tools_used") else "nenhuma"
+            st.caption(f"🔧 ferramentas: {tools}{elapsed}")
+            if msg.get("tool_traces"):
+                for tr in json.loads(msg["tool_traces"]):
+                    with st.expander(f"🔎 `{tr['name']}({json.dumps(tr.get('args') or {}, ensure_ascii=False)})`"):
+                        st.json(tr.get("output"))
         st.caption(msg["created_at"][11:16])
 
 
@@ -161,4 +168,3 @@ else:
         st.rerun()
     if conv["mode"] != store.AGENT:
         st.caption("⏳ Sua mensagem foi encaminhada à equipe da loja, que continuará o atendimento por aqui.")
-

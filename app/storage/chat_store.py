@@ -8,6 +8,7 @@ Conversation modes:
 import json
 import sqlite3
 from datetime import datetime
+from typing import Any
 
 from app.config import CHAT_DB, STORAGE_DIR
 
@@ -33,11 +34,18 @@ def _conn() -> sqlite3.Connection:
             sender TEXT NOT NULL,          -- customer | agent | human | system
             content TEXT NOT NULL,
             tools_used TEXT,               -- JSON list (agent messages only)
+            tool_traces TEXT,              -- JSON list of {name, args, output}
+            elapsed_seconds REAL,          -- processing time in seconds
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_messages_customer ON messages(customer_id, id);
         """
     )
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    if "tool_traces" not in existing:
+        conn.execute("ALTER TABLE messages ADD COLUMN tool_traces TEXT")
+    if "elapsed_seconds" not in existing:
+        conn.execute("ALTER TABLE messages ADD COLUMN elapsed_seconds REAL")
     return conn
 
 
@@ -49,12 +57,28 @@ def _ensure(conn, customer_id: int) -> None:
     conn.execute("INSERT OR IGNORE INTO conversations(customer_id, updated_at) VALUES (?, ?)", (customer_id, _ts()))
 
 
-def add_message(customer_id: int, sender: str, content: str, tools_used: list[str] | None = None) -> None:
+def add_message(
+    customer_id: int,
+    sender: str,
+    content: str,
+    tools_used: list[str] | None = None,
+    tool_traces: list[dict[str, Any]] | None = None,
+    elapsed_seconds: float | None = None,
+) -> None:
     with _conn() as conn:
         _ensure(conn, customer_id)
         conn.execute(
-            "INSERT INTO messages(customer_id, sender, content, tools_used, created_at) VALUES (?,?,?,?,?)",
-            (customer_id, sender, content, json.dumps(tools_used) if tools_used else None, _ts()),
+            "INSERT INTO messages(customer_id, sender, content, tools_used, tool_traces, elapsed_seconds, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (
+                customer_id,
+                sender,
+                content,
+                json.dumps(tools_used, ensure_ascii=False) if tools_used else None,
+                json.dumps(tool_traces, ensure_ascii=False) if tool_traces else None,
+                elapsed_seconds,
+                _ts(),
+            ),
         )
         conn.execute("UPDATE conversations SET updated_at=? WHERE customer_id=?", (_ts(), customer_id))
 
@@ -103,4 +127,3 @@ def reset_conversation(customer_id: int) -> None:
     with _conn() as conn:
         conn.execute("DELETE FROM messages WHERE customer_id=?", (customer_id,))
         conn.execute("DELETE FROM conversations WHERE customer_id=?", (customer_id,))
-
