@@ -56,3 +56,4 @@ def build_database(db_path: Path = STORE_DB) -> Path:
 
 if __name__ == "__main__":
     print(f"Database created at {build_database()}")
+

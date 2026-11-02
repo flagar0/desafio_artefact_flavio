@@ -303,3 +303,4 @@ def get_customer(customer_id: int) -> dict | None:
 def list_customers() -> list[dict]:
     with _conn() as conn:
         return [dict(r) for r in conn.execute("SELECT * FROM customers ORDER BY name").fetchall()]
+

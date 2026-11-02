@@ -105,3 +105,4 @@ Regras:
 Conformidade com a LGPD (Lei nº 13.709/2018). Dados pessoais (nome, telefone, e-mail, endereço) são usados apenas para: processamento e entrega de pedidos; comunicação sobre status e rastreamento; envio de promoções e novidades (somente com consentimento explícito); cumprimento de obrigações legais e fiscais.
 - Dados não são compartilhados com terceiros para fins de marketing.
 - O cliente pode pedir a exclusão dos seus dados a qualquer momento pelo WhatsApp ou e-mail.
+

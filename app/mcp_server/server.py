@@ -90,3 +90,4 @@ def get_opening_status() -> dict:
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+

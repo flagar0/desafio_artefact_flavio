@@ -19,3 +19,4 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # "Hoje" do sistema. Os dados da loja vao ate 2026-03; por padrao usamos a data real da maquina.
 # Pode ser fixada via env para demos reprodutiveis (ex.: FAKE_NOW=2026-03-20T10:00:00).
 FAKE_NOW = os.getenv("FAKE_NOW")
+
