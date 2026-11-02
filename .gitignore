@@ -1,0 +1,13 @@
+# enunciado do desafio e anotações pessoais (nao fazem parte do projeto)
+desafio_tecnico_ai_eng_artefact.pdf
+prompt.txt
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# bancos gerados em runtime (recriados por scripts/ingest.py)
+storage_data/

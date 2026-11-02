@@ -1,0 +1,9 @@
+langchain
+langchain-ollama
+langchain-mcp-adapters
+mcp
+streamlit
+pypdf
+pytest
+python-dotenv
+
