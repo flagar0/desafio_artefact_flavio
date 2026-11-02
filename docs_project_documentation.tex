@@ -65,8 +65,12 @@
 
 \setlength{\parskip}{0.45em}
 \setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
 \setlist[itemize]{noitemsep, topsep=2pt}
 \setlist[enumerate]{noitemsep, topsep=2pt}
+
+% Helper for breakable inline code
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
 
 \begin{document}
 
@@ -98,20 +102,21 @@ By default, the agent handles customer conversations autonomously. Whenever it f
 \section{System Architecture \& How It Works}
 
 \begin{center}
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=1.1cm and 1.4cm,
-    box/.style={rectangle, rounded corners=4pt, draw=primary, fill=blue!5, thick, minimum height=1.0cm, minimum width=2.8cm, align=center, font=\footnotesize\sffamily},
-    db/.style={cylinder, shape border rotate=90, aspect=0.25, draw=secondary, fill=cyan!8, thick, minimum height=1.1cm, minimum width=2.2cm, align=center, font=\footnotesize\sffamily},
-    llm/.style={rectangle, rounded corners=4pt, draw=accent, fill=green!8, thick, minimum height=1.0cm, minimum width=2.8cm, align=center, font=\footnotesize\sffamily},
+    node distance=1.0cm and 1.3cm,
+    box/.style={rectangle, rounded corners=4pt, draw=primary, fill=blue!5, thick, minimum height=1.0cm, minimum width=2.7cm, align=center, font=\footnotesize\sffamily},
+    db/.style={cylinder, shape border rotate=90, aspect=0.25, draw=secondary, fill=cyan!8, thick, minimum height=1.05cm, minimum width=2.1cm, align=center, font=\footnotesize\sffamily},
+    llm/.style={rectangle, rounded corners=4pt, draw=accent, fill=green!8, thick, minimum height=1.0cm, minimum width=2.7cm, align=center, font=\footnotesize\sffamily},
     arrow/.style={-{Stealth[length=2.5mm]}, thick, color=primary}
 ]
     \node[box] (client) {\textbf{Customer View}\\(WhatsApp Simulator)};
     \node[box, below=0.8cm of client] (shop) {\textbf{Shopkeeper Panel}\\(Red Alert \& MCP Traces)};
-    \node[box, right=1.6cm of client] (agent) {\textbf{LangChain Agent}\\(Tool-Calling Loop\\+ Guard Rails)};
+    \node[box, right=1.5cm of client] (agent) {\textbf{LangChain Agent}\\(Tool-Calling Loop\\+ Guard Rails)};
     \node[llm, above=0.85cm of agent] (ollama) {\textbf{Ollama Local LLM}\\(\texttt{qwen3.5:4b})};
-    \node[box, right=1.6cm of agent] (mcp) {\textbf{MCP Server}\\(FastMCP $\cdot$ stdio)};
-    \node[db, above right=0.1cm and 1.3cm of mcp] (storedb) {\textbf{\texttt{store.db}}\\SQLite (CSVs)};
-    \node[box, below right=0.1cm and 1.3cm of mcp] (pol) {\textbf{\texttt{politicas.md}}\\Curated Policies};
+    \node[box, right=1.5cm of agent] (mcp) {\textbf{MCP Server}\\(FastMCP $\cdot$ stdio)};
+    \node[db, above right=0.1cm and 1.2cm of mcp] (storedb) {\textbf{\texttt{store.db}}\\SQLite (CSVs)};
+    \node[box, below right=0.1cm and 1.2cm of mcp] (pol) {\textbf{\texttt{politicas.md}}\\Curated Policies};
     \node[db, below=0.8cm of agent] (chatdb) {\textbf{\texttt{chat.db}}\\Threads \& Mode};
 
     \draw[arrow, <->] (client) -- (agent);
@@ -121,20 +126,26 @@ By default, the agent handles customer conversations autonomously. Whenever it f
     \draw[arrow] (mcp) -- (pol);
     \draw[arrow, <->] (agent) -- (chatdb);
     \draw[arrow, <->] (shop) -- (chatdb);
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \end{center}
 
 \subsection{MCP Tools Exposed (\texttt{app/mcp\_server/server.py})}
 
-\begin{tabularx}{\textwidth}{>{\ttfamily\footnotesize}l X}
+\begin{tabularx}{\textwidth}{>{\ttfamily\footnotesize\raggedright\arraybackslash}p{3.6cm} >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{\normalfont\bfseries Tool Name} & \textbf{Purpose \& When the Agent Calls It} \\
 \midrule
 search\_products & Searches the catalog with exact filters (\texttt{query}, \texttt{max\_price}, \texttt{min\_price}, \texttt{only\_available}, \texttt{on\_promotion}). Used for budget queries (e.g., ``guitars up to R\$ 1000'') or active promotions. \\
+\addlinespace[2pt]
 get\_product\_details & Fetches full specs, original/promotional price, PIX price (5\% discount, non-cumulative with active promos), max interest-free installments, stock status, and automatic similar alternatives if out-of-stock or discontinued. \\
+\addlinespace[2pt]
 list\_categories & Lists all 9 musical instrument categories sold by the store with active product counts. \\
+\addlinespace[2pt]
 get\_customer\_orders & Retrieves orders belonging \textbf{exclusively to the current customer}, including status, items, tracking code, cancellation notes, and precomputed return/warranty eligibility (\texttt{policy\_check}). \\
+\addlinespace[2pt]
 get\_store\_policies & Deterministic topic-based retrieval of the store manual (\texttt{about\_and\_contact}, \texttt{opening\_hours}, \texttt{payment}, \texttt{returns\_exchanges}, \texttt{shipping}, \texttt{promotions}, \texttt{special\_situations}, \texttt{warranty}, \texttt{privacy}). \\
+\addlinespace[2pt]
 get\_opening\_status & Checks in real time whether the store is open right now, today's hours, and the next opening time. \\
 \bottomrule
 \end{tabularx}
@@ -145,7 +156,7 @@ In addition, the agent has a local tool \texttt{request\_human\_handoff(reason)}
 Each customer thread in \texttt{chat.db} has a \texttt{mode} state machine:
 \begin{enumerate}
     \item \texttt{agent} (\textbf{Green --- Default}): The AI agent answers customer messages autonomously.
-    \item \texttt{waiting\_human} (\textbf{\textcolor{alertred}{Red Alert}}): Triggered when the agent calls \texttt{request\_human\_handoff(reason)} (or via safety guard rails). A prominent red banner appears at the top of the shopkeeper's dashboard showing the customer's name, phone, timestamp, and reason. The agent stops replying on that thread.
+    \item \texttt{waiting\_human} (\textbf{\textcolor{alertred}{Red Alert}}): Triggered when the agent calls \texttt{request\_human\_handoff} (or via safety guard rails). A prominent red banner appears at the top of the shopkeeper's dashboard showing the customer's name, phone, timestamp, and reason. The agent stops replying on that thread.
     \item \texttt{human} (\textbf{Yellow}): The shopkeeper clicks \textit{``Assumir conversa''} (Take Over) and replies directly to the customer through the chat interface. Clicking \textit{``Devolver ao agente''} restores \texttt{agent} mode.
 \end{enumerate}
 
@@ -173,16 +184,19 @@ copy .env.example .env            # Optional environment overrides
 # 3. Launch the Streamlit UI (Customer WhatsApp simulator + Shopkeeper Dashboard)
 streamlit run app/ui/streamlit_app.py
 \end{lstlisting}
-The UI will be available at \url{http://localhost:8501}. The SQLite database \texttt{storage\_data/store.db} is automatically built from \texttt{data/*.csv} on first run (or manually via \texttt{python -m app.ingest}).
+The UI will be available at \url{http://localhost:8501}. The SQLite store database (\texttt{storage\_data/\allowbreak store.db}) is built automatically from \texttt{data/*.csv} on first run (or manually via \texttt{python -m app.ingest}).
 
 \subsection{CLI, Automated Tests \& Scenario Evaluation}
-\begin{tabularx}{\textwidth}{>{\ttfamily\footnotesize}l X}
+\begin{tabularx}{\textwidth}{>{\ttfamily\footnotesize\raggedright\arraybackslash}p{5.8cm} >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{\normalfont\bfseries Command} & \textbf{Description} \\
 \midrule
 python -m app.cli --customer 1 --fresh & Interactive terminal chat simulating customer \#1. \\
+\addlinespace[2pt]
 python -m pytest & Runs 16 deterministic unit tests covering data ingestion, accent/plural-insensitive search, PIX vs.\ promo rules, installment rules, customer order isolation, and return deadlines. \\
+\addlinespace[2pt]
 python -m evals.run\_scenarios & Runs 16 end-to-end scenarios against Ollama, verifying that expected MCP tools are called and measuring processing time. \\
+\addlinespace[2pt]
 python -m evals.run\_scenarios --export & Runs the 16 scenarios and exports rich Markdown reports to \texttt{examples/*.md} with exact Python call signatures, JSON arguments, full MCP JSON outputs, and latency metrics. \\
 \bottomrule
 \end{tabularx}
@@ -197,7 +211,10 @@ python -m evals.run\_scenarios --export & Runs the 16 scenarios and exports rich
 % ------------------------------------------------------------------ 4. TECHNICAL DECISIONS
 \section{Technical Decisions \& Justifications}
 
-\begin{longtable}{>{\bfseries\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{3.8cm} p{8.4cm}}
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{>{\bfseries\raggedright\arraybackslash}p{2.9cm} >{\raggedright\arraybackslash}p{3.6cm} >{\raggedright\arraybackslash}p{9.1cm}}
 \toprule
 Topic & Decision & Justification \\
 \midrule
@@ -206,7 +223,7 @@ Topic & Decision & Justification \\
 Topic & Decision & Justification \\
 \midrule
 \endhead
-Agent Framework & \textbf{LangChain} (\texttt{create\_agent}, \texttt{langchain-ollama}, \texttt{langchain-mcp-adapters}) & Mature, industry-standard, and 100\% open-source/free. Provides native tool-calling loops, Ollama integration, and MCP tool adapters/interceptors, with a seamless upgrade path to LangGraph if stateful workflows are needed later. \\
+Agent Framework & \textbf{LangChain} (\texttt{create\_agent}, \texttt{langchain-ollama}, \texttt{langchain-\allowbreak mcp-\allowbreak adapters}) & Mature, industry-standard, and 100\% open-source/free. Provides native tool-calling loops, Ollama integration, and MCP tool adapters/interceptors, with a seamless upgrade path to LangGraph if stateful workflows are needed later. \\
 \addlinespace
 Single Agent vs.\ Multi-Agent (A2A) & \textbf{Single Agent + MCP} (A2A documented as evolution) & The store's scope fits cleanly into 7 well-typed tools. With a small local LLM (4B--9B), every inter-agent hop adds latency and compounding routing errors. \textbf{Agent-to-Agent (A2A)} is recommended as a future evolution once separate domain agents exist (e.g., Sales, Logistics/Post-Sale, Billing). \\
 \addlinespace
@@ -227,6 +244,7 @@ Security \& LGPD Privacy & \textbf{MCP Tool Interceptor} (\texttt{\_force\_custo
 Safety Guard Rails & 3-layer runtime guard rails in \texttt{agent.py} & (1) \textbf{Stall/Policy Retry:} If the model says ``I will check'' without calling a tool, or answers a follow-up policy question from memory, the runtime automatically re-prompts it to invoke the required tool. (2) \textbf{Auto-Handoff:} If the model's text promises that it notified the team without calling \texttt{request\_human\_handoff}, the runtime triggers the handoff automatically. (3) \textbf{Exception Fallback:} Any runtime error triggers a graceful apology and human handoff. \\
 \bottomrule
 \end{longtable}
+\endgroup
 
 \subsection{Performance Benchmark: Why \texttt{qwen3.5:4b} Is Default}
 Measured on the development machine (NVIDIA GTX 1650 4 GB VRAM, Intel Core i7-4790, 16 GB RAM):
@@ -234,7 +252,7 @@ Measured on the development machine (NVIDIA GTX 1650 4 GB VRAM, Intel Core i7-47
     \item \texttt{qwen3.5:9b} ($\sim$6.4 GB Q4\_K\_M): Partially offloads to CPU RAM ($\sim$4.3 tokens/s generation), taking \textbf{$\sim$210s (3.5 min)} for a single tool-calling turn---unusable for interactive chat.
     \item \texttt{qwen3.5:4b} ($\sim$3.3 GB Q4\_K\_M): Fits much better in the 4 GB GPU ($\sim$8.2 tokens/s generation, $\sim$51 tokens/s prompt eval), answering tool-calling turns in \textbf{$\sim$25--60s}.
 \end{itemize}
-Therefore, \texttt{qwen3.5:4b} is set as the default, while \texttt{qwen3.5:9b} remains configurable via \texttt{OLLAMA\_MODEL=qwen3.5:9b} for machines with $\ge$8 GB VRAM.
+Therefore, \texttt{qwen3.5:4b} is set as the default, while \texttt{qwen3.5:9b} remains configurable in \texttt{.env} (\texttt{OLLAMA\_MODEL=qwen3.5:9b}) for machines with $\ge$8 GB VRAM.
 
 % ------------------------------------------------------------------ 5. UI & EXAMPLES
 \section{User Interface \& Interaction Examples}
@@ -242,41 +260,64 @@ Therefore, \texttt{qwen3.5:4b} is set as the default, while \texttt{qwen3.5:9b} 
 \subsection{Streamlit Prototype Screenshots}
 \begin{center}
 \begin{tabular}{cc}
-    \includegraphics[width=0.47\textwidth]{imgs/print_lucas.png} &
-    \includegraphics[width=0.47\textwidth]{imgs/print_mariana.png} \\
+    \includegraphics[width=0.45\textwidth]{imgs/print_lucas.png} &
+    \includegraphics[width=0.45\textwidth]{imgs/print_mariana.png} \\
     \footnotesize\textbf{(a) Shopkeeper View:} Red alert banner \& MCP trace &
     \footnotesize\textbf{(b) Customer View:} Scope refusal \& redirection
 \end{tabular}
 \end{center}
 
-\subsection{Summary of the 16 Evaluated \& Exported Scenarios (\texttt{examples/*.md})}
+\subsection{Summary of the 16 Evaluated \& Exported Scenarios (\texttt{examples/})}
 All 16 scenarios were executed against the live agent (\texttt{python -m evals.run\_scenarios --export}) and passed (\textbf{16/16 PASS}). Each exported Markdown file records the \textbf{processing time per turn}, the \textbf{exact Python tool call signature}, the \textbf{JSON arguments sent}, and the \textbf{full JSON output returned by the MCP server}.
 
-\begin{longtable}{c l p{4.2cm} p{6.2cm} r}
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{longtable}{c >{\ttfamily\raggedright\arraybackslash}p{3.5cm} >{\raggedright\arraybackslash}p{3.8cm} >{\raggedright\arraybackslash}p{6.5cm} r}
 \toprule
-\textbf{\#} & \textbf{File} & \textbf{Scenario} & \textbf{MCP Tools Verified \& Highlights} & \textbf{Time} \\
+\textbf{\#} & \textbf{\normalfont\bfseries File} & \textbf{Scenario} & \textbf{MCP Tools Verified \& Highlights} & \textbf{Time} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{\normalfont\bfseries File} & \textbf{Scenario} & \textbf{MCP Tools Verified \& Highlights} & \textbf{Time} \\
 \midrule
 \endhead
-01 & \texttt{01\_catalogo.md} & Guitars up to R\$ 1000 + Yamaha C40 details & \texttt{search\_products(max\_price=1000)} $\rightarrow$ \texttt{get\_product\_details('Yamaha C40')} & 122.3s \\
-02 & \texttt{02\_loja.md} & Store address + ``Are you open right now?'' & \texttt{get\_store\_policies('about\_and\_contact')} $\rightarrow$ \texttt{get\_opening\_status()} & 72.5s \\
-03 & \texttt{03\_preco\_promocao.md} & Takamine GD20 price + active promotions & \texttt{get\_product\_details('Takamine GD20')} $\rightarrow$ \texttt{search\_products(on\_promotion=True)} & 53.7s \\
-04 & \texttt{04\_devolucao.md} & \textbf{Non-trivial:} Regret return on delivered order & \texttt{get\_customer\_orders(customer\_id=1)} (315 days $>$ 7-day limit) $\rightarrow$ \texttt{request\_human\_handoff} & 95.0s \\
-05 & \texttt{05\_fora\_escopo.md} & Carrot cake recipe + guitar strings request & Direct polite refusal for out-of-scope \& accessory redirection (no tools called) & 58.3s \\
-06 & \texttt{06\_produto\_esgotado.md} & Out-of-stock Giannini GF-3D & \texttt{get\_product\_details('Giannini GF-3D')} $\rightarrow$ reports stock 0 + suggests 3 available alternatives & 48.2s \\
-07 & \texttt{07\_produto\_descontinuado.md} & Discontinued 7-string Shelby SN-7C & \texttt{get\_product\_details('Shelby SN-7C')} $\rightarrow$ informs discontinued status + suggests alternatives & 51.2s \\
-08 & \texttt{08\_pix\_nao\_cumulativo.md} & Crafter HT-100 promo + PIX discount question & \texttt{get\_product\_details('Crafter HT-100')} $\rightarrow$ shows 18\% promo \& explains 5\% PIX does not stack & 51.0s \\
-09 & \texttt{09\_rastreio\_pedido.md} & Order \#8 status \& tracking code & \texttt{get\_customer\_orders(customer\_id=2, order\_id='8')} $\rightarrow$ \texttt{shipped}, code \texttt{BRJL5544332BR} & 65.2s \\
-10 & \texttt{10\_pedido\_cancelado.md} & Why was my order cancelled? & \texttt{get\_customer\_orders(customer\_id=17)} $\rightarrow$ reads cancellation \texttt{notes} (item out of stock) & 46.5s \\
-11 & \texttt{11\_parcelamento...sp.md} & \textbf{Multi-turn:} Credit card installments + shipping to S\~ao Paulo & Turn 1: \texttt{get\_store\_policies('payment')} (up to 12x rules) $\rightarrow$ Turn 2: \texttt{get\_store\_policies('shipping')} (Correios/Jadlog deadlines) & 172.4s \\
-12 & \texttt{12\_frete\_entrega.md} & Shipping to Campo Grande vs.\ other cities & \texttt{get\_store\_policies('shipping')} $\rightarrow$ motoboy (free $>$ R\$ 500) vs.\ PAC, SEDEX, Jadlog & 54.1s \\
-13 & \texttt{13\_garantia.md} & Warranty rules + broken string question & \texttt{get\_store\_policies('warranty')} $\rightarrow$ 90-day legal + manufacturer warranty; broken strings excluded as natural wear & 52.9s \\
-14 & \texttt{14\_categorias.md} & Product categories sold by the store & \texttt{list\_categories()} $\rightarrow$ lists active instrument categories and counts & 49.1s \\
-15 & \texttt{15\_reclamacao\_handoff.md} & Warped guitar neck complaint & Empathy + escalates immediately via \texttt{request\_human\_handoff} (red alert) & 32.3s \\
-16 & \texttt{16\_entrada\_aleatoria.md} & \textbf{Gibberish input} (\texttt{askdjansdkj}) + recovery & Turn 1: asks for clarification without calling tools $\rightarrow$ Turn 2: \texttt{search\_products('violao nylon', max\_price=700)} & 110.6s \\
+01 & 01\_catalogo.md & Guitars up to R\$ 1000 + Yamaha C40 details & \texttt{search\_products} (\texttt{max\_price=1000}) $\rightarrow$ \texttt{get\_product\_details} (\texttt{'Yamaha C40'}) & 122.3s \\
+\addlinespace[2pt]
+02 & 02\_loja.md & Store address + ``Are you open right now?'' & \texttt{get\_store\_policies} (\texttt{'about\_and\_contact'}) $\rightarrow$ \texttt{get\_opening\_status()} & 72.5s \\
+\addlinespace[2pt]
+03 & 03\_preco\_\allowbreak promocao.md & Takamine GD20 price + active promotions & \texttt{get\_product\_details} (\texttt{'Takamine GD20'}) $\rightarrow$ \texttt{search\_products} (\texttt{on\_promotion=True}) & 53.7s \\
+\addlinespace[2pt]
+04 & 04\_devolucao.md & \textbf{Non-trivial:} Regret return on delivered order & \texttt{get\_customer\_orders} (\texttt{customer\_id=1}, 315 days $>$ 7-day limit) $\rightarrow$ \texttt{request\_human\_handoff} & 95.0s \\
+\addlinespace[2pt]
+05 & 05\_fora\_escopo.md & Carrot cake recipe + guitar strings request & Direct polite refusal for out-of-scope \& accessory redirection (no tools called) & 58.3s \\
+\addlinespace[2pt]
+06 & 06\_produto\_\newline esgotado.md & Out-of-stock Giannini GF-3D & \texttt{get\_product\_details} (\texttt{'Giannini GF-3D'}) $\rightarrow$ stock 0 + suggests 3 available alternatives & 48.2s \\
+\addlinespace[2pt]
+07 & 07\_produto\_\newline descontinuado.md & Discontinued 7-string Shelby SN-7C & \texttt{get\_product\_details} (\texttt{'Shelby SN-7C'}) $\rightarrow$ informs discontinued status + alternatives & 51.2s \\
+\addlinespace[2pt]
+08 & 08\_pix\_nao\_\newline cumulativo.md & Crafter HT-100 promo + PIX discount question & \texttt{get\_product\_details} (\texttt{'Crafter HT-100'}) $\rightarrow$ shows 18\% promo \& explains 5\% PIX does not stack & 51.0s \\
+\addlinespace[2pt]
+09 & 09\_rastreio\_\newline pedido.md & Order \#8 status \& tracking code & \texttt{get\_customer\_orders} (\texttt{customer\_id=2}, \texttt{order\_id='8'}) $\rightarrow$ \texttt{shipped}, \texttt{BRJL5544332BR} & 65.2s \\
+\addlinespace[2pt]
+10 & 10\_pedido\_\newline cancelado.md & Why was my order cancelled? & \texttt{get\_customer\_orders} (\texttt{customer\_id=17}) $\rightarrow$ reads cancellation \texttt{notes} (item out of stock) & 46.5s \\
+\addlinespace[2pt]
+11 & 11\_parcelamento\_e\_\newline entrega\_sp.md & \textbf{Multi-turn:} Credit card installments + shipping to S\~ao Paulo & Turn 1: \texttt{get\_store\_policies} (\texttt{'payment'}, up to 12x rules) $\rightarrow$ Turn 2: \texttt{get\_store\_policies} (\texttt{'shipping'}, Correios/Jadlog deadlines) & 172.4s \\
+\addlinespace[2pt]
+12 & 12\_frete\_entrega.md & Shipping to Campo Grande vs.\ other cities & \texttt{get\_store\_policies} (\texttt{'shipping'}) $\rightarrow$ motoboy (free $>$ R\$ 500) vs.\ PAC, SEDEX, Jadlog & 54.1s \\
+\addlinespace[2pt]
+13 & 13\_garantia.md & Warranty rules + broken string question & \texttt{get\_store\_policies} (\texttt{'warranty'}) $\rightarrow$ 90-day legal + manufacturer warranty; broken strings excluded & 52.9s \\
+\addlinespace[2pt]
+14 & 14\_categorias.md & Product categories sold by the store & \texttt{list\_categories()} $\rightarrow$ lists active instrument categories and counts & 49.1s \\
+\addlinespace[2pt]
+15 & 15\_reclamacao\_\newline handoff.md & Warped guitar neck complaint & Empathy + escalates immediately via \texttt{request\_human\_handoff} (red alert) & 32.3s \\
+\addlinespace[2pt]
+16 & 16\_entrada\_\newline aleatoria.md & \textbf{Gibberish input} (\texttt{askdjansdkj}) + recovery & Turn 1: asks for clarification without calling tools $\rightarrow$ Turn 2: \texttt{search\_products} (\texttt{'violao nylon'}, \texttt{max\_price=700}) & 110.6s \\
 \bottomrule
 \end{longtable}
+\endgroup
 
-\subsection{Sample Rich Trace Excerpt (from \texttt{examples/04\_devolucao.md} \& \texttt{11\_parcelamento\_e\_entrega\_sp.md})}
+\subsection{Sample Rich Trace Excerpt (from \texttt{examples/04\_devolucao.md})}
 Below is an excerpt illustrating how the exported \texttt{.md} files document both the agent's exact function call and the MCP server's response:
 
 \begin{lstlisting}
