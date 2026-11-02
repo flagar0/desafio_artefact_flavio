@@ -66,6 +66,12 @@ def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
 
+def to_whatsapp(text: str) -> str:
+    """Models love Markdown; WhatsApp uses *bold* and plain bullets."""
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    return re.sub(r"^\s*[*-]\s+", "• ", text, flags=re.M)
+
+
 def _to_lc(messages: list[dict]):
     out = []
     for m in messages[-HISTORY_LIMIT:]:
@@ -79,14 +85,32 @@ class AgentRuntime:
     def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
         threading.Thread(target=self._loop.run_forever, daemon=True).start()
-        self._stack = AsyncExitStack()
         self._agent = None
-        self._run(self._setup(), timeout=120)
+        self._ready = asyncio.run_coroutine_threadsafe(self._serve(), self._loop)
+        self._setup_done = threading.Event()
+        if not self._setup_done.wait(timeout=120):
+            raise RuntimeError("Agent startup timed out (is Ollama running?)")
+        if self._startup_error:
+            raise self._startup_error
 
     def _run(self, coro, timeout: float):
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
 
-    async def _setup(self) -> None:
+    async def _serve(self) -> None:
+        """Single long-lived task: opens the MCP session, waits until close(), then tears it down.
+        (anyio requires a cancel scope to be exited by the same task that entered it.)"""
+        self._startup_error = None
+        self._stop = asyncio.Event()
+        try:
+            async with AsyncExitStack() as stack:
+                await self._setup(stack)
+                self._setup_done.set()
+                await self._stop.wait()
+        except Exception as exc:  # surface startup problems to the caller
+            self._startup_error = exc
+            self._setup_done.set()
+
+    async def _setup(self, stack: AsyncExitStack) -> None:
         client = MultiServerMCPClient(
             {
                 "store": {
@@ -98,7 +122,7 @@ class AgentRuntime:
                 }
             }
         )
-        session = await self._stack.enter_async_context(client.session("store"))
+        session = await stack.enter_async_context(client.session("store"))
         tools = await load_mcp_tools(session, server_name="store", tool_interceptors=[_force_customer_id])
         model = ChatOllama(
             model=OLLAMA_MODEL,
@@ -115,7 +139,7 @@ class AgentRuntime:
         result = await self._agent.ainvoke({"messages": messages}, {"recursion_limit": 14})
         new = result["messages"][len(messages):]
         tools_used = [tc["name"] for m in new if isinstance(m, AIMessage) for tc in m.tool_calls]
-        text = _strip_thinking(new[-1].content if isinstance(new[-1].content, str) else "")
+        text = to_whatsapp(_strip_thinking(new[-1].content if isinstance(new[-1].content, str) else ""))
         return AgentReply(text, tools_used, handoff="request_human_handoff" in tools_used)
 
     def reply(self, customer: dict, history: list[dict], timeout: float = 240) -> AgentReply:
@@ -130,7 +154,11 @@ class AgentRuntime:
             return AgentReply(FALLBACK_REPLY, ["error"], handoff=True)
 
     def close(self) -> None:
-        self._run(self._stack.aclose(), timeout=15)
+        self._loop.call_soon_threadsafe(self._stop.set)
+        try:
+            self._ready.result(timeout=15)
+        except Exception:
+            pass
 
 
 def handle_customer_message(runtime: AgentRuntime, customer_id: int, text: str) -> AgentReply | None:

@@ -149,7 +149,7 @@ def search_products(
     max_price: float | None = None,
     min_price: float | None = None,
     only_available: bool = True,
-    limit: int = 8,
+    limit: int = 6,
 ) -> dict:
     with _conn() as conn:
         rows = conn.execute(
@@ -169,7 +169,7 @@ def search_products(
                 continue
             results.append(view)
     results.sort(key=_price_now)
-    return {"total_found": len(results), "showing": results[:limit], "prices_include": "preço final já com promoção ativa, quando houver"}
+    return {"total_found": len(results), "showing_count": min(len(results), limit), "showing": results[:limit], "prices_include": "preço final já com promoção ativa, quando houver"}
 
 
 def get_product(name_or_id: str) -> dict:

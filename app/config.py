@@ -1,4 +1,4 @@
-"""Central configuration (paths + model settings)."""
+﻿"""Central configuration (paths + model settings)."""
 import os
 from pathlib import Path
 
@@ -13,7 +13,7 @@ STORE_DB = STORAGE_DIR / "store.db"  # catalogo/pedidos/clientes (gerado a parti
 CHAT_DB = STORAGE_DIR / "chat.db"  # historico das conversas (runtime)
 POLICIES_MD = ROOT / "app" / "knowledge" / "politicas.md"
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # "Hoje" do sistema. Os dados da loja vao ate 2026-03; por padrao usamos a data real da maquina.

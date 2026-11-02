@@ -34,7 +34,7 @@ def search_products(
         max_price: maximum FINAL price in BRL (promotion already applied), e.g. 1000.
         min_price: minimum FINAL price in BRL.
         only_available: True hides out-of-stock/discontinued items. Use False only if the customer asks about a specific unavailable product.
-    Returns up to 8 products sorted by price, with original/final price, active promotion, PIX price and availability.
+    Returns up to 6 products sorted by price, with original/final price, active promotion, PIX price and availability.
     """
     return repo.search_products(query, max_price, min_price, only_available)
 
