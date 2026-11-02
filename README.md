@@ -75,7 +75,7 @@ O banco `storage_data/store.db` é criado automaticamente a partir dos CSVs em `
 |---|---|
 | `python -m app.cli --customer 1 --fresh` | Conversa pelo terminal como o cliente 1 |
 | `python -m pytest` | 16 testes determinísticos da camada de dados e regras de negócio (sem LLM) |
-| `python -m evals.run_scenarios` | Avalia 5 cenários contra o Ollama, verificando se a ferramenta esperada foi chamada |
+| `python -m evals.run_scenarios` | Avalia 15 cenários contra o Ollama, verificando se a ferramenta esperada foi chamada |
 | `python -m evals.run_scenarios --export` | Idem e regrava `examples/*.md` |
 
 ### Configuração (`.env`)
@@ -120,22 +120,40 @@ Por isso o padrão é o 4b. Em hardware melhor basta `OLLAMA_MODEL=qwen3.5:9b` (
 
 ## Exemplos de interação
 
+### Prints da interface (Streamlit)
+
+| Visão do Lojista (alerta vermelho + handoff humano) | Visão do Cliente (escopo e redirecionamento) |
+|---|---|
+| ![Alerta vermelho no painel do lojista](imgs/print_lucas.png) | ![Conversa com a cliente Mariana](imgs/print_mariana.png) |
+
+### Conversas exportadas (15 cenários reais)
+
 Execuções reais do agente, geradas por `python -m evals.run_scenarios --export` (incluem as ferramentas chamadas):
 
 | # | Cenário | Destaque |
 |---|---|---|
 | [01](examples/01_catalogo.md) | Violões até R$ 1000 + detalhes de um modelo | Consulta de catálogo com filtro de preço |
 | [02](examples/02_loja.md) | Endereço e "estão abertos agora?" | Política vs. status em tempo real |
-| [03](examples/03_preco_promocao.md) | Preço do Takamine GD20 e promoções ativas | Preço de tabela, PIX, parcelamento, promoção ativa (sem acumular com PIX) |
+| [03](examples/03_preco_promocao.md) | Preço do Takamine GD20 e promoções ativas | Preço de tabela, PIX, parcelamento, promoção ativa |
 | [04](examples/04_devolucao.md) | "Me arrependi da compra" | **Não trivial:** pedido do cliente + prazo de 7 dias + handoff humano com alerta |
 | [05](examples/05_fora_escopo.md) | Receita de bolo e corda de violão | Fora de escopo e produto que a loja não vende |
+| [06](examples/06_produto_esgotado.md) | Violão Giannini GF-3D sem estoque | Informa indisponibilidade e sugere alternativas disponíveis |
+| [07](examples/07_produto_descontinuado.md) | Violão 7 cordas Shelby SN-7C descontinuado | Informa saída do catálogo e sugere equivalentes |
+| [08](examples/08_pix_nao_cumulativo.md) | Crafter HT-100 em promoção + pergunta sobre PIX | Explica que o desconto de 5% no PIX não acumula com promoção ativa |
+| [09](examples/09_rastreio_pedido.md) | Status e rastreio do pedido #8 | Consulta em tempo real de pedido enviado (`shipped`) e código de rastreio |
+| [10](examples/10_pedido_cancelado.md) | Motivo de pedido cancelado | Consulta `notes` do pedido cancelado do próprio cliente |
+| [11](examples/11_formas_pagamento.md) | Formas de pagamento e regras de parcelamento | PIX (5%), débito, boleto e faixas de parcelamento sem juros no cartão |
+| [12](examples/12_frete_entrega.md) | Frete para Campo Grande e outras cidades | Motoboy (grátis > R$ 500) vs. PAC, SEDEX e Jadlog |
+| [13](examples/13_garantia.md) | Garantia legal, do fabricante e exclusões | 90 dias CDC vs. desgaste natural (cordas não cobertas) |
+| [14](examples/14_categorias.md) | Categorias de instrumentos da loja | Lista as 9 categorias ativas do catálogo |
+| [15](examples/15_reclamacao_handoff.md) | Reclamação de instrumento com defeito | Empatia, prazo de 24h úteis e escalonamento imediato (`request_human_handoff`) |
 
 ## Limitações conhecidas e próximos passos
 
 **Limitações**
 - **Sem WhatsApp real**: a UI é uma simulação. Em produção seria um webhook (WhatsApp Business Cloud API) → o mesmo `handle_customer_message`.
 - **Latência alta** (dezenas de segundos) por rodar um LLM em hardware modesto; sem *streaming* de resposta nem indicador de "digitando" real.
-- **Qualidade do modelo pequeno**: pode errar roteamento ou omitir informações (ex.: citar menos produtos do que retornou). Mitigado com regras no código, guard rails e avaliação por cenário, mas não eliminado. Os testes de cenário são poucos (5) e não medem qualidade textual.
+- **Qualidade do modelo pequeno**: pode errar roteamento ou omitir informações (ex.: citar menos produtos do que retornou). Mitigado com regras no código, guard rails e avaliação por cenário, mas não eliminado. Os testes de cenário cobrem 15 fluxos, mas não medem qualidade textual com juiz automático.
 - **Data de recebimento aproximada**: os dados só trazem a *previsão* de entrega; ela é usada como proxy dos prazos de devolução/garantia (o agente é instruído a não prometer sem confirmar com a equipe). Feriados não são considerados no horário de funcionamento.
 - **Recuperação de políticas por tópico**: ótimo para um manual curto, mas não escala para centenas de páginas (aí valeria busca híbrida/embeddings).
 - **Painel do lojista com atualização manual** (botão 🔄) e sem autenticação; um único processo.
@@ -153,7 +171,7 @@ Execuções reais do agente, geradas por `python -m evals.run_scenarios --export
 
 ## Uso de assistentes de código
 
-Usei o **Antigravity** (agente de código do Google DeepMind) como par de programação, com o seguinte workflow:
+Usei o **Antigravity** (agente de código do Google DeepMind) como par de programação, utilizando os modelos Claude Opus 5.5 para planejamento, Sonnet 5.5 e Argon 4 para execução, com o seguinte workflow:
 
 1. **Eu defini o problema e as decisões de arquitetura** (Ollama local, MCP para dados, A2A só se necessário, UI estilo WhatsApp com cadastro de clientes, alerta vermelho para o lojista, agente autônomo por padrão).
 2. **O assistente explorou os dados** (CSVs e PDF) e propôs um **plano** (`implementation_plan`), apontando armadilhas: só 4 de 25 promoções ativas, PIX não cumulativo com promoção, loja não vende acessórios, todos os pedidos já fora do prazo de arrependimento, contradição aparente de telefones.
@@ -178,5 +196,6 @@ app/
 data/               CSVs e PDF do desafio
 tests/              testes das regras de negócio (sem LLM)
 evals/              cenários + exportação dos exemplos
-examples/           conversas reais do agente
+examples/           15 conversas reais exportadas do agente (.md)
+imgs/               prints da interface Streamlit (visão lojista e cliente)
 ```

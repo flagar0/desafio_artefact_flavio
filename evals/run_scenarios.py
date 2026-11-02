@@ -1,4 +1,4 @@
-﻿"""Mini evaluation + example exporter.
+"""Mini evaluation + example exporter.
 
   python -m evals.run_scenarios                # run all scenarios, check expected tools
   python -m evals.run_scenarios 03_preco       # run a subset
@@ -34,6 +34,36 @@ SCENARIOS = {
     "05_fora_escopo": ("Fora de escopo e acessórios", 4, [
         ("Me passa uma receita de bolo de cenoura?", None),
         ("Vocês vendem corda de violão?", None),
+    ]),
+    "06_produto_esgotado": ("Produto esgotado e sugestão de alternativas", 6, [
+        ("Vocês têm o violão Giannini GF-3D em estoque?", "get_product_details"),
+    ]),
+    "07_produto_descontinuado": ("Produto descontinuado e alternativas", 7, [
+        ("Quero comprar o violão 7 cordas Shelby SN-7C, quanto está?", "get_product_details"),
+    ]),
+    "08_pix_nao_cumulativo": ("Promoção ativa vs desconto PIX (regra de não cumulatividade)", 8, [
+        ("O violão Crafter HT-100 está em promoção? Se eu pagar no PIX ganho mais 5% de desconto?", "get_product_details"),
+    ]),
+    "09_rastreio_pedido": ("Consulta de pedido em trânsito e código de rastreio", 2, [
+        ("Oi, qual o status do meu pedido #8 e qual o código de rastreio?", "get_customer_orders"),
+    ]),
+    "10_pedido_cancelado": ("Consulta de motivo de pedido cancelado", 17, [
+        ("Por que o meu pedido foi cancelado?", "get_customer_orders"),
+    ]),
+    "11_formas_pagamento": ("Regras de pagamento e parcelamento", 9, [
+        ("Quais são as formas de pagamento e as regras de parcelamento no cartão?", "get_store_policies"),
+    ]),
+    "12_frete_entrega": ("Política de frete para Campo Grande e outras cidades", 10, [
+        ("Como funciona o frete para Campo Grande e para outras cidades?", "get_store_policies"),
+    ]),
+    "13_garantia": ("Política de garantia legal e do fabricante", 11, [
+        ("Como funciona a garantia dos instrumentos? Corda arrebentada entra na garantia?", "get_store_policies"),
+    ]),
+    "14_categorias": ("Listagem de categorias do catálogo", 12, [
+        ("Quais categorias de instrumentos vocês vendem na loja?", "list_categories"),
+    ]),
+    "15_reclamacao_handoff": ("Reclamação de defeito e escalonamento humano", 5, [
+        ("Meu instrumento chegou com o braço empenado, quero abrir uma reclamação e falar com um atendente agora!", "request_human_handoff"),
     ]),
 }
 
