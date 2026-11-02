@@ -78,6 +78,13 @@ _PROMISES_HANDOFF = re.compile(
 )
 
 
+_STALLS = re.compile(r"\b(vou|vamos|posso|preciso|irei|deixa eu)\s+(\w+\s+){0,2}(verificar|consultar|checar|buscar|olhar|ver)\b", re.I)
+_STALL_NUDGE = (
+    "[instrução do sistema] Você disse que ia consultar, mas não chamou nenhuma ferramenta. "
+    "Chame AGORA a ferramenta adequada, sem pedir permissão ao cliente, e só então responda em português."
+)
+
+
 def _to_lc(messages: list[dict]):
     out = []
     for m in messages[-HISTORY_LIMIT:]:
@@ -139,14 +146,26 @@ class AgentRuntime:
         )
         self._agent = create_agent(model, tools + [request_human_handoff])
 
-    async def _reply(self, customer: dict, history: list[dict]) -> AgentReply:
-        _ctx.set({"customer_id": customer["customer_id"]})
-        messages = [("system", build_system_prompt(customer))] + _to_lc(history)
+    async def _run_agent(self, messages: list) -> tuple[str, list[str]]:
         result = await self._agent.ainvoke({"messages": messages}, {"recursion_limit": 14})
         new = result["messages"][len(messages):]
         tools_used = [tc["name"] for m in new if isinstance(m, AIMessage) for tc in m.tool_calls]
-        text = to_whatsapp(_strip_thinking(new[-1].content if isinstance(new[-1].content, str) else ""))
-        handoff = "request_human_handoff" in tools_used
+        content = new[-1].content if isinstance(new[-1].content, str) else ""
+        return to_whatsapp(_strip_thinking(content)), tools_used
+
+    async def _reply(self, customer: dict, history: list[dict]) -> AgentReply:
+        _ctx.set({"customer_id": customer["customer_id"]})
+        messages = [("system", build_system_prompt(customer))] + _to_lc(history)
+        text, tools_used = await self._run_agent(messages)
+
+        # Guard rail 1: small models sometimes announce a lookup ("vou verificar...") without calling a tool.
+        if not tools_used and _STALLS.search(text):
+            retry = messages + [AIMessage(text), HumanMessage(_STALL_NUDGE)]
+            text, tools_used = await self._run_agent(retry)
+            tools_used = [f"{t}(retry)" if i == 0 else t for i, t in enumerate(tools_used)]
+
+        # Guard rail 2: promised to call the team but did not call the handoff tool.
+        handoff = "request_human_handoff" in tools_used or "request_human_handoff(retry)" in tools_used
         if not handoff and _PROMISES_HANDOFF.search(text):
             last = next((m["content"] for m in reversed(history) if m["sender"] == "customer"), "")
             chat_store.request_handoff(
