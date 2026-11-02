@@ -39,6 +39,11 @@ def test_inactive_promotion_ignored_and_pix_applied():
     assert p["pix_price"] is not None
 
 
+def test_search_only_promotions():
+    res = repo.search_products("", on_promotion=True)
+    assert res["total_found"] > 0 and all(p["has_active_promotion"] for p in res["showing"])
+
+
 def test_product_lookup_by_partial_name():
     p = repo.get_product("Takamine GD20")
     assert p["found"] and "GD20" in p["name"]

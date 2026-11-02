@@ -72,6 +72,12 @@ def to_whatsapp(text: str) -> str:
     return re.sub(r"^\s*[*-]\s+", "• ", text, flags=re.M)
 
 
+# Guard rail: the model sometimes *says* it called the team without calling the tool.
+_PROMISES_HANDOFF = re.compile(
+    r"(avis|encaminh|repass|cham|acion|transfer)\w*[^.!?\n]{0,60}(equipe|atendente|humano|pessoa|gerência)", re.I
+)
+
+
 def _to_lc(messages: list[dict]):
     out = []
     for m in messages[-HISTORY_LIMIT:]:
@@ -140,7 +146,15 @@ class AgentRuntime:
         new = result["messages"][len(messages):]
         tools_used = [tc["name"] for m in new if isinstance(m, AIMessage) for tc in m.tool_calls]
         text = to_whatsapp(_strip_thinking(new[-1].content if isinstance(new[-1].content, str) else ""))
-        return AgentReply(text, tools_used, handoff="request_human_handoff" in tools_used)
+        handoff = "request_human_handoff" in tools_used
+        if not handoff and _PROMISES_HANDOFF.search(text):
+            last = next((m["content"] for m in reversed(history) if m["sender"] == "customer"), "")
+            chat_store.request_handoff(
+                customer["customer_id"], f"[auto] O agente prometeu acionar a equipe. Última mensagem do cliente: {last[:200]}"
+            )
+            tools_used.append("request_human_handoff(auto)")
+            handoff = True
+        return AgentReply(text, tools_used, handoff)
 
     def reply(self, customer: dict, history: list[dict], timeout: float = 240) -> AgentReply:
         """history = stored messages of this customer, already including the newest customer message."""

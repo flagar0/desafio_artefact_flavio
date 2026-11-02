@@ -26,6 +26,7 @@ def search_products(
     max_price: float | None = None,
     min_price: float | None = None,
     only_available: bool = True,
+    on_promotion: bool = False,
 ) -> dict:
     """Search the product catalog. Use for any question about instruments, prices or availability by category/brand/budget.
 
@@ -33,10 +34,11 @@ def search_products(
         query: free text, e.g. "violao", "guitarra yamaha", "ukulele soprano". Empty = all products.
         max_price: maximum FINAL price in BRL (promotion already applied), e.g. 1000.
         min_price: minimum FINAL price in BRL.
+        on_promotion: True returns only products with an ACTIVE promotion (use for 'tem promoção?', 'ofertas').
         only_available: True hides out-of-stock/discontinued items. Use False only if the customer asks about a specific unavailable product.
     Returns up to 6 products sorted by price, with original/final price, active promotion, PIX price and availability.
     """
-    return repo.search_products(query, max_price, min_price, only_available)
+    return repo.search_products(query, max_price, min_price, only_available, on_promotion)
 
 
 @mcp.tool()

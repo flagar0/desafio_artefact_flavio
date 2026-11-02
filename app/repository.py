@@ -149,6 +149,7 @@ def search_products(
     max_price: float | None = None,
     min_price: float | None = None,
     only_available: bool = True,
+    on_promotion: bool = False,
     limit: int = 6,
 ) -> dict:
     with _conn() as conn:
@@ -163,6 +164,8 @@ def search_products(
                 continue
             view = _product_view(conn, row)
             if only_available and not view["available"]:
+                continue
+            if on_promotion and not view["has_active_promotion"]:
                 continue
             price = _price_now(view)
             if (max_price is not None and price > max_price) or (min_price is not None and price < min_price):
